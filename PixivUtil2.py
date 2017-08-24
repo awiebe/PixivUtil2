@@ -443,6 +443,7 @@ def process_member(mode, member_id, user_dir='', page=1, end_page=0, bookmark=Fa
                         continue
 
                 retry_count = 0
+                process_image_task=ProcessImageTask(__config__,__br__,__dbManager__,__blacklistTags,__blacklistMembers,__suppressTags)
                 while True:
                     try:
                         if artist.totalImages > 0:
@@ -460,7 +461,7 @@ def process_member(mode, member_id, user_dir='', page=1, end_page=0, bookmark=Fa
                                                                                              updated_limit_count,
                                                                                              total_image_page_count)
                         if not DEBUG_SKIP_PROCESS_IMAGE:
-                            result = process_image(mode, artist, image_id, user_dir, bookmark, title_prefix=title_prefix)  # Yavos added dir-argument to pass
+                            result = process_image_task.process_image(mode, artist, image_id, user_dir, bookmark, title_prefix=title_prefix)  # Yavos added dir-argument to pass
 
                         break
                     except KeyboardInterrupt:
@@ -541,259 +542,269 @@ def process_member(mode, member_id, user_dir='', page=1, end_page=0, bookmark=Fa
             PixivHelper.printAndLog('error', 'Cannot dump page for member_id:' + str(member_id))
         raise
 
+class ProcessImageTask:
+    __re_manga_page = re.compile(r'(\d+(_big)?_p\d+)')
+    def __init__(self,config,browser,db,blacklistTags,blacklistMembers,suppressTags):
+        self.config=config
+        self.browser=browser
+        self.db=db
+        self.blacklistTags=blacklistTags
+        self.blacklistMembers=blacklistMembers
+        self.suppressTags=suppressTags
 
-def process_image(mode, artist=None, image_id=None, user_dir='', bookmark=False, search_tags='', title_prefix=None, bookmark_count=-1, image_response_count=-1):
-    global __errorList
-    global ERROR_CODE
+    def process_image(self,mode, artist=None, image_id=None, user_dir='', bookmark=False, search_tags='', title_prefix=None, bookmark_count=-1, image_response_count=-1):
+        global __errorList
+        global ERROR_CODE
 
-    parse_big_image = None
-    parse_medium_page = None
-    image = None
-    result = None
-    referer = 'https://www.pixiv.net/member_illust.php?mode=medium&illust_id=' + str(image_id)
+        parse_big_image = None
+        parse_medium_page = None
+        image = None
+        result = None
+        referer = 'https://www.pixiv.net/member_illust.php?mode=medium&illust_id=' + str(image_id)
 
-    try:
-        filename = 'N/A'
-        print 'Processing Image Id:', image_id
-
-        # check if already downloaded. images won't be downloaded twice - needed in process_image to catch any download
-        r = __dbManager__.selectImageByImageId(image_id)
-        if r is not None and not __config__.alwaysCheckFileSize:
-            if mode == PixivConstant.PIXIVUTIL_MODE_UPDATE_ONLY:
-                print 'Already downloaded:', image_id
-                gc.collect()
-                return
-
-        # get the medium page
         try:
-            (image, parse_medium_page) = PixivBrowserFactory.getBrowser().getImagePage(imageId=image_id,
-                                                                                       parent=artist,
-                                                                                       fromBookmark=bookmark,
-                                                                                       bookmark_count=bookmark_count)
-            if title_prefix is not None:
-                set_console_title(title_prefix + " ImageId: {0}".format(image.imageId))
-            else:
-                set_console_title('MemberId: ' + str(image.artist.artistId) + ' ImageId: ' + str(image.imageId))
+            filename = 'N/A'
+            print 'Processing Image Id:', image_id
 
-        except PixivException as ex:
-            ERROR_CODE = ex.errorCode
-            __errorList.append(dict(type="Image", id=str(image_id), message=ex.message, exception=ex))
-            if ex.errorCode == PixivException.UNKNOWN_IMAGE_ERROR:
-                PixivHelper.safePrint(ex.message)
-            elif ex.errorCode == PixivException.SERVER_ERROR:
-                PixivHelper.printAndLog('error', 'Giving up image_id (medium): ' + str(image_id))
-            elif ex.errorCode > 2000:
-                PixivHelper.printAndLog('error', 'Image Error for ' + str(image_id) + ': ' + ex.message)
-            if parse_medium_page is not None:
-                dump_filename = 'Error medium page for image ' + str(image_id) + '.html'
-                PixivHelper.dumpHtml(dump_filename, parse_medium_page)
-                PixivHelper.printAndLog('error', 'Dumping html to: ' + dump_filename)
-            else:
+            # check if already downloaded. images won't be downloaded twice - needed in process_image to catch any download
+            r = self.db.selectImageByImageId(image_id)
+            if r is not None and not self.config.alwaysCheckFileSize:
+                if mode == PixivConstant.PIXIVUTIL_MODE_UPDATE_ONLY:
+                    print 'Already downloaded:', image_id
+                    gc.collect()
+                    return
+
+            # get the medium page
+            try:
+
+                (image, parse_medium_page) = PixivBrowserFactory.getBrowser().getImagePage(imageId=image_id,
+                                                                                           parent=artist,
+                                                                                           fromBookmark=bookmark,
+                                                                                           bookmark_count=bookmark_count)
+                if title_prefix is not None:
+                    set_console_title(title_prefix + " ImageId: {0}".format(image.imageId))
+                else:
+                    set_console_title('MemberId: ' + str(image.artist.artistId) + ' ImageId: ' + str(image.imageId))
+
+            except PixivException as ex:
+                ERROR_CODE = ex.errorCode
+                __errorList.append(dict(type="Image", id=str(image_id), message=ex.message, exception=ex))
+                if ex.errorCode == PixivException.UNKNOWN_IMAGE_ERROR:
+                    PixivHelper.safePrint(ex.message)
+                elif ex.errorCode == PixivException.SERVER_ERROR:
+                    PixivHelper.printAndLog('error', 'Giving up image_id (medium): ' + str(image_id))
+                elif ex.errorCode > 2000:
+                    PixivHelper.printAndLog('error', 'Image Error for ' + str(image_id) + ': ' + ex.message)
+                if parse_medium_page is not None:
+                    dump_filename = 'Error medium page for image ' + str(image_id) + '.html'
+                    PixivHelper.dumpHtml(dump_filename, parse_medium_page)
+                    PixivHelper.printAndLog('error', 'Dumping html to: ' + dump_filename)
+                else:
+                    PixivHelper.printAndLog('info', 'Image ID (' + str(image_id) + '): ' + str(ex))
+                return PixivConstant.PIXIVUTIL_NOT_OK
+            except Exception as ex:
                 PixivHelper.printAndLog('info', 'Image ID (' + str(image_id) + '): ' + str(ex))
-            return PixivConstant.PIXIVUTIL_NOT_OK
-        except Exception as ex:
-            PixivHelper.printAndLog('info', 'Image ID (' + str(image_id) + '): ' + str(ex))
-            if parse_medium_page is not None:
-                dump_filename = 'Error medium page for image ' + str(image_id) + '.html'
-                PixivHelper.dumpHtml(dump_filename, parse_medium_page)
-                PixivHelper.printAndLog('error', 'Dumping html to: ' + dump_filename)
-            return PixivConstant.PIXIVUTIL_NOT_OK
+                if parse_medium_page is not None:
+                    dump_filename = 'Error medium page for image ' + str(image_id) + '.html'
+                    PixivHelper.dumpHtml(dump_filename, parse_medium_page)
+                    PixivHelper.printAndLog('error', 'Dumping html to: ' + dump_filename)
+                return PixivConstant.PIXIVUTIL_NOT_OK
 
-        download_image_flag = True
+            download_image_flag = True
 
-        # date validation and blacklist tag validation
-        if __config__.dateDiff > 0:
-            if image.worksDateDateTime != datetime.datetime.fromordinal(1):
-                if image.worksDateDateTime < datetime.datetime.today() - datetime.timedelta(__config__.dateDiff):
-                    PixivHelper.printAndLog('info', 'Skipping image_id: ' + str(image_id) + ' because contains older than: ' + str(__config__.dateDiff) + ' day(s).')
-                    download_image_flag = False
-                    result = PixivConstant.PIXIVUTIL_SKIP_OLDER
+            # date validation and blacklist tag validation
+            if self.config.dateDiff > 0:
+                if image.worksDateDateTime != datetime.datetime.fromordinal(1):
+                    if image.worksDateDateTime < datetime.datetime.today() - datetime.timedelta(self.config.dateDiff):
+                        PixivHelper.printAndLog('info', 'Skipping image_id: ' + str(image_id) + ' because contains older than: ' + str(__config__.dateDiff) + ' day(s).')
+                        download_image_flag = False
+                        result = PixivConstant.PIXIVUTIL_SKIP_OLDER
 
-        if __config__.useBlacklistTags:
-            for item in __blacklistTags:
-                if item in image.imageTags:
-                    PixivHelper.printAndLog('info', 'Skipping image_id: ' + str(image_id) + ' because contains blacklisted tags: ' + item)
+            if self.config.useBlacklistTags:
+                for item in self.blacklistTags:
+                    if item in image.imageTags:
+                        PixivHelper.printAndLog('info', 'Skipping image_id: ' + str(image_id) + ' because contains blacklisted tags: ' + item)
+                        download_image_flag = False
+                        result = PixivConstant.PIXIVUTIL_SKIP_BLACKLIST
+                        break
+
+            if self.config.useBlacklistMembers:
+                if str(image.originalArtist.artistId) in self.blacklistMembers:
+                    PixivHelper.printAndLog('info', 'Skipping image_id: ' + str(image_id) + ' because contains blacklisted member id: ' + str(image.originalArtist.artistId))
                     download_image_flag = False
                     result = PixivConstant.PIXIVUTIL_SKIP_BLACKLIST
-                    break
 
-        if __config__.useBlacklistMembers:
-            if str(image.originalArtist.artistId) in __blacklistMembers:
-                PixivHelper.printAndLog('info', 'Skipping image_id: ' + str(image_id) + ' because contains blacklisted member id: ' + str(image.originalArtist.artistId))
-                download_image_flag = False
-                result = PixivConstant.PIXIVUTIL_SKIP_BLACKLIST
+            if download_image_flag:
+                PixivHelper.safePrint("Title: " + image.imageTitle)
+                PixivHelper.safePrint("Tags : " + ', '.join(image.imageTags))
+                PixivHelper.safePrint("Date : " + str(image.worksDateDateTime))
+                print "Mode :", image.imageMode
 
-        if download_image_flag:
-            PixivHelper.safePrint("Title: " + image.imageTitle)
-            PixivHelper.safePrint("Tags : " + ', '.join(image.imageTags))
-            PixivHelper.safePrint("Date : " + str(image.worksDateDateTime))
-            print "Mode :", image.imageMode
+                # get bookmark count
+                if ("%bookmark_count%" in self.config.filenameFormat or "%image_response_count%" in self.config.filenameFormat) and image.bookmark_count == -1:
+                    print "Parsing bookmark page",
+                    bookmark_url = 'https://www.pixiv.net/bookmark_detail.php?illust_id=' + str(image_id)
+                    parse_bookmark_page = PixivBrowserFactory.getBrowser().getPixivPage(bookmark_url)
+                    image.ParseBookmarkDetails(parse_bookmark_page)
+                    parse_bookmark_page.decompose()
+                    del parse_bookmark_page
+                    print "Bookmark Count :", str(image.bookmark_count)
+                    self.browser.back()
 
-            # get bookmark count
-            if ("%bookmark_count%" in __config__.filenameFormat or "%image_response_count%" in __config__.filenameFormat) and image.bookmark_count == -1:
-                print "Parsing bookmark page",
-                bookmark_url = 'https://www.pixiv.net/bookmark_detail.php?illust_id=' + str(image_id)
-                parse_bookmark_page = PixivBrowserFactory.getBrowser().getPixivPage(bookmark_url)
-                image.ParseBookmarkDetails(parse_bookmark_page)
-                parse_bookmark_page.decompose()
-                del parse_bookmark_page
-                print "Bookmark Count :", str(image.bookmark_count)
-                __br__.back()
+                if self.config.useSuppressTags:
+                    for item in self.suppressTags:
+                        if item in image.imageTags:
+                            image.imageTags.remove(item)
 
-            if __config__.useSuppressTags:
-                for item in __suppressTags:
-                    if item in image.imageTags:
-                        image.imageTags.remove(item)
-
-            # get manga page
-            if image.imageMode == 'manga' or image.imageMode == 'big':
-                while True:
-                    try:
-                        big_url = 'https://www.pixiv.net/member_illust.php?mode={0}&illust_id={1}'.format(image.imageMode, image_id)
-                        parse_big_image = PixivBrowserFactory.getBrowser().getPixivPage(big_url, referer)
-                        if parse_big_image is not None:
-                            image.ParseImages(page=parse_big_image, _br=PixivBrowserFactory.getExistingBrowser())
-                            parse_big_image.decompose()
-                            del parse_big_image
-                        break
-                    except Exception as ex:
-                        __errorList.append(dict(type="Image", id=str(image_id), message=ex.message, exception=ex))
-                        PixivHelper.printAndLog('info', 'Image ID (' + str(image_id) + '): ' + str(traceback.format_exc()))
+                # get manga page
+                if image.imageMode == 'manga' or image.imageMode == 'big':
+                    while True:
                         try:
+                            big_url = 'https://www.pixiv.net/member_illust.php?mode={0}&illust_id={1}'.format(image.imageMode, image_id)
+                            parse_big_image = PixivBrowserFactory.getBrowser().getPixivPage(big_url, referer)
                             if parse_big_image is not None:
-                                dump_filename = 'Error Big Page for image ' + str(image_id) + '.html'
-                                PixivHelper.dumpHtml(dump_filename, parse_big_image)
-                                PixivHelper.printAndLog('error', 'Dumping html to: ' + dump_filename)
-                        except:
-                            PixivHelper.printAndLog('error', 'Cannot dump big page for image_id: ' + str(image_id))
-                        return PixivConstant.PIXIVUTIL_NOT_OK
+                                image.ParseImages(page=parse_big_image, _br=PixivBrowserFactory.getExistingBrowser())
+                                parse_big_image.decompose()
+                                del parse_big_image
+                            break
+                        except Exception as ex:
+                            __errorList.append(dict(type="Image", id=str(image_id), message=ex.message, exception=ex))
+                            PixivHelper.printAndLog('info', 'Image ID (' + str(image_id) + '): ' + str(traceback.format_exc()))
+                            try:
+                                if parse_big_image is not None:
+                                    dump_filename = 'Error Big Page for image ' + str(image_id) + '.html'
+                                    PixivHelper.dumpHtml(dump_filename, parse_big_image)
+                                    PixivHelper.printAndLog('error', 'Dumping html to: ' + dump_filename)
+                            except:
+                                PixivHelper.printAndLog('error', 'Cannot dump big page for image_id: ' + str(image_id))
+                            return PixivConstant.PIXIVUTIL_NOT_OK
+
+                    if image.imageMode == 'manga':
+                        print "Page Count :", image.imageCount
+
+                if user_dir == '':  # Yavos: use config-options
+                    target_dir = self.config.rootDirectory
+                else:  # Yavos: use filename from list
+                    target_dir = user_dir
+
+                result = PixivConstant.PIXIVUTIL_OK
+                mangaFiles = dict()
+                page = 0
+                dl = ImageDownloadTask(self.config, self.browser, self.db)
+                for img in image.imageUrls:
+                    print 'Image URL :', img
+                    url = os.path.basename(img)
+                    splitted_url = url.split('.')
+                    if splitted_url[0].startswith(str(image_id)):
+                        # Yavos: filename will be added here if given in list
+                        filename_format = self.config.filenameFormat
+                        if image.imageMode == 'manga':
+                            filename_format = self.config.filenameMangaFormat
+
+                        filename = PixivHelper.makeFilename(filename_format, image, tagsSeparator=self.config.tagsSeparator, tagsLimit=__config__.tagsLimit, fileUrl=url, bookmark=bookmark, searchTags=search_tags)
+                        filename = PixivHelper.sanitizeFilename(filename, target_dir)
+
+                        if image.imageMode == 'manga' and self.config.createMangaDir:
+                            manga_page = ProcessImageTask.__re_manga_page.findall(filename)
+                            if len(manga_page) > 0:
+                                splitted_filename = filename.split(manga_page[0][0], 1)
+                                splitted_manga_page = manga_page[0][0].split("_p", 1)
+                                filename = splitted_filename[0] + splitted_manga_page[0] + os.sep + "_p" + splitted_manga_page[1] + splitted_filename[1]
+
+                        PixivHelper.safePrint('Filename  : ' + filename)
+                        result = PixivConstant.PIXIVUTIL_NOT_OK
+                        try:
+                            overwrite = False
+                            if mode == PixivConstant.PIXIVUTIL_MODE_OVERWRITE:
+                                overwrite = True
+
+                            result = dl.async_download_image(img, filename, referer, overwrite, self.config.retry, self.config.backupOldFile, image_id, page)
+
+                            mangaFiles[page] = filename
+                            page = page + 1
+
+                            if result == PixivConstant.PIXIVUTIL_NOT_OK:
+                                PixivHelper.printAndLog('error', 'Image url not found/failed to download: ' + str(image.imageId))
+                            elif result == PixivConstant.PIXIVUTIL_ABORTED:
+                                raise KeyboardInterrupt()
+
+                        except urllib2.URLError:
+                            PixivHelper.printAndLog('error', 'Giving up url: ' + str(img))
+                            __log__.exception('Error when download_image(): ' + str(img))
+                        print ''
+
+                dl.join()
+
+                if self.config.writeImageInfo or self.config.writeImageJSON:
+                    filename_info_format = self.config.filenameInfoFormat
+                    info_filename = PixivHelper.makeFilename(filename_info_format, image, tagsSeparator=self.config.tagsSeparator,
+                                                        tagsLimit=self.config.tagsLimit, fileUrl=url, appendExtension=False, bookmark=bookmark,
+                                                        searchTags=search_tags)
+                    info_filename = PixivHelper.sanitizeFilename(info_filename, target_dir)
+                    # trim _pXXX
+                    info_filename = re.sub('_p?\d+$', '', info_filename)
+                    if self.config.writeImageInfo:
+                        image.WriteInfo(info_filename + ".txt")
+                    if self.config.writeImageJSON:
+                        image.WriteJSON(info_filename + ".json")
+
+                if image.imageMode == 'ugoira_view':
+                    if self.config.writeUgoiraInfo:
+                        image.WriteUgoiraData(filename + ".js")
+                    if self.config.createUgoira and result == PixivConstant.PIXIVUTIL_OK:
+                        ugo_name = filename[:-4] + ".ugoira"
+                        PixivHelper.printAndLog('info', "Creating ugoira archive => " + ugo_name)
+                        image.CreateUgoira(filename)
+                        if self.config.deleteZipFile:
+                            PixivHelper.printAndLog('info', "Deleting zip file => " + filename)
+                            os.remove(filename)
+
+                        if self.config.createGif:
+                            gif_filename = ugo_name[:-7] + ".gif"
+                            PixivHelper.ugoira2gif(ugo_name, gif_filename)
+                        if self.config.createApng:
+                            gif_filename = ugo_name[:-7] + ".png"
+                            PixivHelper.ugoira2apng(ugo_name, gif_filename)
+
+                if self.config.writeUrlInDescription:
+                    PixivHelper.writeUrlInDescription(image, self.config.urlBlacklistRegex, self.config.urlDumpFilename)
+
+            # Only save to db if all images is downloaded completely
+            if result == PixivConstant.PIXIVUTIL_OK or result == PixivConstant.PIXIVUTIL_SKIP_DUPLICATE or result == PixivConstant.PIXIVUTIL_SKIP_LOCAL_LARGER:
+                try:
+                    self.db.insertImage(image.artist.artistId, image.imageId, image.imageMode)
+                except:
+                    pass
+                self.db.updateImage(image.imageId, image.imageTitle, filename, image.imageMode)
 
                 if image.imageMode == 'manga':
-                    print "Page Count :", image.imageCount
+                    for page in mangaFiles:
+                        self.db.insertMangaImage(image_id, page, mangaFiles[page])
 
-            if user_dir == '':  # Yavos: use config-options
-                target_dir = __config__.rootDirectory
-            else:  # Yavos: use filename from list
-                target_dir = user_dir
+                # map back to PIXIVUTIL_OK (because of ugoira file check)
+                result = 0
 
-            result = PixivConstant.PIXIVUTIL_OK
-            mangaFiles = dict()
-            page = 0
-            dl = ImageDownloadTask(__config__, __br__, __dbManager__)
-            for img in image.imageUrls:
-                print 'Image URL :', img
-                url = os.path.basename(img)
-                splitted_url = url.split('.')
-                if splitted_url[0].startswith(str(image_id)):
-                    # Yavos: filename will be added here if given in list
-                    filename_format = __config__.filenameFormat
-                    if image.imageMode == 'manga':
-                        filename_format = __config__.filenameMangaFormat
+            if image is not None:
+                del image
+            gc.collect()
+            # clearall()
+            print '\n'
+            return result
+        except KeyboardInterrupt:
+            raise
+        except Exception as ex:
+            ERROR_CODE = getattr(ex, 'errorCode', -1)
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            traceback.print_exception(exc_type, exc_value, exc_traceback)
+            PixivHelper.printAndLog('error', 'Error at process_image(): ' + str(sys.exc_info()))
+            __log__.exception('Error at process_image(): ' + str(image_id))
 
-                    filename = PixivHelper.makeFilename(filename_format, image, tagsSeparator=__config__.tagsSeparator, tagsLimit=__config__.tagsLimit, fileUrl=url, bookmark=bookmark, searchTags=search_tags)
-                    filename = PixivHelper.sanitizeFilename(filename, target_dir)
+            if parse_medium_page is not None:
+                dump_filename = 'Error medium page for image ' + str(image_id) + '.html'
+                PixivHelper.dumpHtml(dump_filename, parse_medium_page)
+                PixivHelper.printAndLog('error', 'Dumping html to: ' + dump_filename)
 
-                    if image.imageMode == 'manga' and __config__.createMangaDir:
-                        manga_page = __re_manga_page.findall(filename)
-                        if len(manga_page) > 0:
-                            splitted_filename = filename.split(manga_page[0][0], 1)
-                            splitted_manga_page = manga_page[0][0].split("_p", 1)
-                            filename = splitted_filename[0] + splitted_manga_page[0] + os.sep + "_p" + splitted_manga_page[1] + splitted_filename[1]
-
-                    PixivHelper.safePrint('Filename  : ' + filename)
-                    result = PixivConstant.PIXIVUTIL_NOT_OK
-                    try:
-                        overwrite = False
-                        if mode == PixivConstant.PIXIVUTIL_MODE_OVERWRITE:
-                            overwrite = True
-
-                        result = dl.async_download_image(img, filename, referer, overwrite, __config__.retry, __config__.backupOldFile, image_id, page)
-
-                        mangaFiles[page] = filename
-                        page = page + 1
-
-                        if result == PixivConstant.PIXIVUTIL_NOT_OK:
-                            PixivHelper.printAndLog('error', 'Image url not found/failed to download: ' + str(image.imageId))
-                        elif result == PixivConstant.PIXIVUTIL_ABORTED:
-                            raise KeyboardInterrupt()
-
-                    except urllib2.URLError:
-                        PixivHelper.printAndLog('error', 'Giving up url: ' + str(img))
-                        __log__.exception('Error when download_image(): ' + str(img))
-                    print ''
-
-            dl.join()
-
-            if __config__.writeImageInfo or __config__.writeImageJSON:
-                filename_info_format = __config__.filenameInfoFormat
-                info_filename = PixivHelper.makeFilename(filename_info_format, image, tagsSeparator=__config__.tagsSeparator,
-                                                    tagsLimit=__config__.tagsLimit, fileUrl=url, appendExtension=False, bookmark=bookmark,
-                                                    searchTags=search_tags)
-                info_filename = PixivHelper.sanitizeFilename(info_filename, target_dir)
-                # trim _pXXX
-                info_filename = re.sub('_p?\d+$', '', info_filename)
-                if __config__.writeImageInfo:
-                    image.WriteInfo(info_filename + ".txt")
-                if __config__.writeImageJSON:
-                    image.WriteJSON(info_filename + ".json")
-
-            if image.imageMode == 'ugoira_view':
-                if __config__.writeUgoiraInfo:
-                    image.WriteUgoiraData(filename + ".js")
-                if __config__.createUgoira and result == PixivConstant.PIXIVUTIL_OK:
-                    ugo_name = filename[:-4] + ".ugoira"
-                    PixivHelper.printAndLog('info', "Creating ugoira archive => " + ugo_name)
-                    image.CreateUgoira(filename)
-                    if __config__.deleteZipFile:
-                        PixivHelper.printAndLog('info', "Deleting zip file => " + filename)
-                        os.remove(filename)
-
-                    if __config__.createGif:
-                        gif_filename = ugo_name[:-7] + ".gif"
-                        PixivHelper.ugoira2gif(ugo_name, gif_filename)
-                    if __config__.createApng:
-                        gif_filename = ugo_name[:-7] + ".png"
-                        PixivHelper.ugoira2apng(ugo_name, gif_filename)
-
-            if __config__.writeUrlInDescription:
-                PixivHelper.writeUrlInDescription(image, __config__.urlBlacklistRegex, __config__.urlDumpFilename)
-
-        # Only save to db if all images is downloaded completely
-        if result == PixivConstant.PIXIVUTIL_OK or result == PixivConstant.PIXIVUTIL_SKIP_DUPLICATE or result == PixivConstant.PIXIVUTIL_SKIP_LOCAL_LARGER:
-            try:
-                __dbManager__.insertImage(image.artist.artistId, image.imageId, image.imageMode)
-            except:
-                pass
-            __dbManager__.updateImage(image.imageId, image.imageTitle, filename, image.imageMode)
-
-            if image.imageMode == 'manga':
-                for page in mangaFiles:
-                    __dbManager__.insertMangaImage(image_id, page, mangaFiles[page])
-
-            # map back to PIXIVUTIL_OK (because of ugoira file check)
-            result = 0
-
-        if image is not None:
-            del image
-        gc.collect()
-        # clearall()
-        print '\n'
-        return result
-    except KeyboardInterrupt:
-        raise
-    except Exception as ex:
-        ERROR_CODE = getattr(ex, 'errorCode', -1)
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        traceback.print_exception(exc_type, exc_value, exc_traceback)
-        PixivHelper.printAndLog('error', 'Error at process_image(): ' + str(sys.exc_info()))
-        __log__.exception('Error at process_image(): ' + str(image_id))
-
-        if parse_medium_page is not None:
-            dump_filename = 'Error medium page for image ' + str(image_id) + '.html'
-            PixivHelper.dumpHtml(dump_filename, parse_medium_page)
-            PixivHelper.printAndLog('error', 'Dumping html to: ' + dump_filename)
-
-        raise
+            raise
 
 
 def process_tags(mode, tags, page=1, end_page=0, wild_card=True, title_caption=False,
@@ -848,6 +859,7 @@ def process_tags(mode, tags, page=1, end_page=0, wild_card=True, title_caption=F
                         skipped_count = skipped_count + 1
                         continue
                     result = 0
+                    process_task = ProcessImageTask(__config__,__br__,__dbManager__,__blacklistTags,__blacklistMembers,__suppressTags)
                     while True:
                         try:
                             if t.availableImages > 0:
@@ -867,7 +879,7 @@ def process_tags(mode, tags, page=1, end_page=0, wild_card=True, title_caption=F
                                                                                                               skipped_count,
                                                                                                               total_image)
                             if not DEBUG_SKIP_PROCESS_IMAGE:
-                                process_image(mode, None, item.imageId, search_tags=search_tags, title_prefix=title_prefix, bookmark_count=item.bookmarkCount, image_response_count=item.imageResponse)
+                                process_task.process_image(mode, None, item.imageId, search_tags=search_tags, title_prefix=title_prefix, bookmark_count=item.bookmarkCount, image_response_count=item.imageResponse)
                             break
                         except KeyboardInterrupt:
                             result = PixivConstant.PIXIVUTIL_KEYBOARD_INTERRUPT
@@ -969,9 +981,11 @@ def process_image_bookmark(mode, hide='n', start_page=1, end_page=0, tag=''):
             totalList.extend(get_image_bookmark(True, start_page, end_page, tag))
 
         PixivHelper.printAndLog('info', "Found " + str(len(totalList)) + " image(s).")
+
+        process_task = ProcessImageTask(__config__,__br__,__dbManager__,__blacklistTags,__blacklistMembers,__suppressTags)
         for item in totalList:
             print "Image #" + str(image_count)
-            process_image(mode, artist=None, image_id=item)
+            process_task.process_image(mode, artist=None, image_id=item)
             image_count = image_count + 1
 
         print "Done.\n"
@@ -1092,6 +1106,7 @@ def process_new_illust_from_bookmark(mode, page_num=1, end_page_num=0):
         i = page_num
         image_count = 1
         flag = True
+        process_image_task=ProcessImageTask(__config__,__br__,__dbManager__,__blacklistTags,__blacklistMembers,__suppressTags)
         while flag:
             print "Page #" + str(i)
             url = 'https://www.pixiv.net/bookmark_new_illust.php?p=' + str(i)
@@ -1108,7 +1123,7 @@ def process_new_illust_from_bookmark(mode, page_num=1, end_page_num=0):
 
             for image_id in pb.imageList:
                 print "Image #" + str(image_count)
-                result = process_image(mode, artist=None, image_id=int(image_id))
+                result = process_image_task.process_image(mode, artist=None, image_id=int(image_id))
                 image_count = image_count + 1
 
                 if result == PixivConstant.PIXIVUTIL_SKIP_OLDER:
@@ -1146,6 +1161,7 @@ def process_from_group(mode, group_id, limit=0, process_external=True):
         image_count = 0
         flag = True
         dl = ImageDownloadTask(__config__, __br__, __dbManager__)
+        process_task = ProcessImageTask(__config__,__br__,__dbManager__,__blacklistTags,__blacklistMembers,__suppressTags)
         while flag:
             url = "https://www.pixiv.net/group/images.php?format=json&max_id={0}&id={1}".format(max_id, group_id)
             PixivHelper.printAndLog('info', "Getting images from: {0}".format(url))
@@ -1159,7 +1175,7 @@ def process_from_group(mode, group_id, limit=0, process_external=True):
                         break
                     print "Image #{0}".format(image_count)
                     print "ImageId: {0}".format(image)
-                    process_image(mode, image_id=image)
+                    process_task.process_image(mode, image_id=image)
                     image_count = image_count + 1
 
             if process_external and group_data.externalImageList is not None and len(group_data.externalImageList) > 0:
@@ -1362,11 +1378,12 @@ def menu_download_by_member_bookmark(mode, opisvalid, args):
 
 def menu_download_by_image_id(mode, opisvalid, args):
     __log__.info('Image id mode.')
+    process_task = ProcessImageTask(__config__,__br__,__dbManager__,__blacklistTags,__blacklistMembers,__suppressTags)
     if opisvalid and len(args) > 0:
         for image_id in args:
             try:
                 test_id = int(image_id)
-                process_image(mode, None, test_id)
+                process_task.process_image(mode, None, test_id)
             except:
                 PixivHelper.printAndLog('error', "Image ID: {0} is not valid".format(image_id))
                 continue
@@ -1374,7 +1391,7 @@ def menu_download_by_image_id(mode, opisvalid, args):
         image_ids = raw_input('Image ids: ')
         image_ids = PixivHelper.getIdsFromCsv(image_ids, sep=" ")
         for image_id in image_ids:
-            process_image(mode, None, int(image_id))
+            process_task.process_image(mode, None, int(image_id))
 
 
 def menu_download_by_tags(mode, opisvalid, args):
