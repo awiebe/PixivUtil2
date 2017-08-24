@@ -66,178 +66,187 @@ __re_manga_page = re.compile(r'(\d+(_big)?_p\d+)')
 
 
 # -T04------For download file
-def download_image(url, filename, referer, overwrite, max_retry, backup_old_file=False, image_id=None, page=None):
-    global ERROR_CODE
-    tempErrorCode = None
-    retry_count = 0
-    while retry_count <= max_retry:
-        res = None
-        req = None
-        try:
+
+class ImageDownloadTask:
+
+    def __init__(self,config,browser,db):
+        self.config=config
+        self.browser = browser
+        self.db = db
+
+
+    def download_image(self, url, filename, referrer, overwrite, max_retry, backup_old_file=False, image_id=None, page=None):
+        global ERROR_CODE
+        temp_error_code = None
+        retry_count = 0
+        while retry_count <= max_retry:
+            res = None
+            req = None
             try:
-                if not overwrite and not __config__.alwaysCheckFileSize:
-                    print 'Checking local filename...',
-                    if os.path.exists(filename) and os.path.isfile(filename):
-                        PixivHelper.printAndLog('info', "File exists: {0}".format(filename.encode('utf-8')))
-                        return PixivConstant.PIXIVUTIL_SKIP_DUPLICATE
+                try:
+                    if not overwrite and not self.config.alwaysCheckFileSize:
+                        print 'Checking local filename...',
+                        if os.path.exists(filename) and os.path.isfile(filename):
+                            PixivHelper.printAndLog('info', "File exists: {0}".format(filename.encode('utf-8')))
+                            return PixivConstant.PIXIVUTIL_SKIP_DUPLICATE
 
-                print 'Getting remote filesize...'
-                # open with HEAD method
-                file_size = get_remote_file_size(url, referer)
+                    print 'Getting remote filesize...'
+                    # open with HEAD method
+                    file_size = get_remote_file_size(url, referrer)
 
-                # check if existing file exists
-                if os.path.exists(filename) and os.path.isfile(filename) and not filename.endswith(".zip"):
-                    old_size = os.path.getsize(filename)
-                    checkResult = PixivHelper.checkFileExists(overwrite, filename, file_size, old_size, backup_old_file)
-                    if checkResult != 1:
-                        return checkResult
-
-                # check for ugoira file
-                if filename.endswith(".zip"):
-                    ugoName = filename[:-4] + ".ugoira"
-                    gifName = filename[:-4] + ".gif"
-                    apngName = filename[:-4] + ".png"
-                    # non-converted zip (no animation.json)
-                    if os.path.exists(filename) and os.path.isfile(filename):
-                        # not sure what is the proper handling, currently it will throw error after download due to file already exists.
-                        pass
-                    # converted to ugoira (has animation.json)
-                    if os.path.exists(ugoName) and os.path.isfile(ugoName):
-                        old_size = PixivHelper.getUgoiraSize(ugoName)
-                        checkResult = PixivHelper.checkFileExists(overwrite, ugoName, file_size, old_size, backup_old_file)
+                    # check if existing file exists
+                    if os.path.exists(filename) and os.path.isfile(filename) and not filename.endswith(".zip"):
+                        old_size = os.path.getsize(filename)
+                        checkResult = PixivHelper.checkFileExists(overwrite, filename, file_size, old_size, backup_old_file)
                         if checkResult != 1:
-                            # try to convert existing file.
-                            if __config__.createGif and not os.path.exists(gifName):
-                                PixivHelper.ugoira2gif(ugoName, gifName)
-                            if __config__.createApng and not os.path.exists(apngName):
-                                PixivHelper.ugoira2apng(ugoName, apngName)
-
                             return checkResult
 
-                # check based on filename stored in DB using image id
-                if image_id is not None:
-                    db_filename = None
-                    if page is not None:
-                        row = __dbManager__.selectImageByImageIdAndPage(image_id, page)
-                        if row is not None:
-                            db_filename = row[2]
-                    else:
-                        row = __dbManager__.selectImageByImageId(image_id)
-                        if row is not None:
-                            db_filename = row[3]
-                    if db_filename is not None and os.path.exists(db_filename) and os.path.isfile(db_filename):
-                        old_size = os.path.getsize(db_filename)
-                        checkResult = PixivHelper.checkFileExists(overwrite, db_filename, file_size, old_size, backup_old_file)
-                        if checkResult != 1:
-                            ugoName = None
-                            if db_filename.endswith(".zip"):
-                                ugoName = db_filename[:-4] + ".ugoira"
-                                gifName = db_filename[:-4] + ".gif"
-                                apngName = db_filename[:-4] + ".png"
-                            if db_filename.endswith(".ugoira"):
-                                ugoName = db_filename
-                                gifName = db_filename[:-7] + ".gif"
-                                apngName = db_filename[:-7] + ".png"
-
-                            if ugoName is not None and os.path.exists(ugoName) and os.path.isfile(ugoName):
+                    # check for ugoira file
+                    if filename.endswith(".zip"):
+                        ugoName = filename[:-4] + ".ugoira"
+                        gifName = filename[:-4] + ".gif"
+                        apngName = filename[:-4] + ".png"
+                        # non-converted zip (no animation.json)
+                        if os.path.exists(filename) and os.path.isfile(filename):
+                            # not sure what is the proper handling, currently it will throw error after download due to file already exists.
+                            pass
+                        # converted to ugoira (has animation.json)
+                        if os.path.exists(ugoName) and os.path.isfile(ugoName):
+                            old_size = PixivHelper.getUgoiraSize(ugoName)
+                            checkResult = PixivHelper.checkFileExists(overwrite, ugoName, file_size, old_size, backup_old_file)
+                            if checkResult != 1:
                                 # try to convert existing file.
-                                if __config__.createGif and not os.path.exists(gifName):
+                                if self.config.createGif and not os.path.exists(gifName):
                                     PixivHelper.ugoira2gif(ugoName, gifName)
-                                if __config__.createApng and not os.path.exists(apngName):
+                                if self.config.createApng and not os.path.exists(apngName):
                                     PixivHelper.ugoira2apng(ugoName, apngName)
 
-                            return checkResult
+                                return checkResult
 
-                # actual download
-                print 'Start downloading...',
-                req = PixivHelper.createCustomRequest(url, __config__, referer)
-                res = __br__.open_novisit(req)
-                downloadedSize = PixivHelper.downloadImage(url, filename, res, file_size, overwrite)
+                    # check based on filename stored in DB using image id
+                    if image_id is not None:
+                        db_filename = None
+                        if page is not None:
+                            row = self.db.selectImageByImageIdAndPage(image_id, page)
+                            if row is not None:
+                                db_filename = row[2]
+                        else:
+                            row = self.db.selectImageByImageId(image_id)
+                            if row is not None:
+                                db_filename = row[3]
+                        if db_filename is not None and os.path.exists(db_filename) and os.path.isfile(db_filename):
+                            old_size = os.path.getsize(db_filename)
+                            checkResult = PixivHelper.checkFileExists(overwrite, db_filename, file_size, old_size, backup_old_file)
+                            if checkResult != 1:
+                                ugoName = None
+                                if db_filename.endswith(".zip"):
+                                    ugoName = db_filename[:-4] + ".ugoira"
+                                    gifName = db_filename[:-4] + ".gif"
+                                    apngName = db_filename[:-4] + ".png"
+                                if db_filename.endswith(".ugoira"):
+                                    ugoName = db_filename
+                                    gifName = db_filename[:-7] + ".gif"
+                                    apngName = db_filename[:-7] + ".png"
 
-                # check the downloaded file size again
-                if file_size > 0 and downloadedSize != file_size:
-                    raise PixivException("Incomplete Downloaded for {0}".format(url), PixivException.DOWNLOAD_FAILED_OTHER)
-                elif __config__.verifyImage and (filename.endswith(".jpg") or filename.endswith(".png") or filename.endswith(".gif")):
-                    fp = None
-                    try:
-                        from PIL import Image
-                        fp = open(filename, "rb")
-                        img = Image.open(fp)
-                        img.load()
-                        fp.close()
-                        PixivHelper.printAndLog('info', ' Image verified.')
-                    except:
-                        if fp is not None:
+                                if ugoName is not None and os.path.exists(ugoName) and os.path.isfile(ugoName):
+                                    # try to convert existing file.
+                                    if self.config.createGif and not os.path.exists(gifName):
+                                        PixivHelper.ugoira2gif(ugoName, gifName)
+                                    if self.config.createApng and not os.path.exists(apngName):
+                                        PixivHelper.ugoira2apng(ugoName, apngName)
+
+                                return checkResult
+
+                    # actual download
+                    print 'Start downloading...',
+                    req = PixivHelper.createCustomRequest(url, self.config, referrer)
+                    res = self.browser.open_novisit(req)
+                    downloadedSize = PixivHelper.downloadImage(url, filename, res, file_size, overwrite)
+
+                    # check the downloaded file size again
+                    if file_size > 0 and downloadedSize != file_size:
+                        raise PixivException("Incomplete Downloaded for {0}".format(url), PixivException.DOWNLOAD_FAILED_OTHER)
+                    elif self.config.verifyImage and (filename.endswith(".jpg") or filename.endswith(".png") or filename.endswith(".gif")):
+                        fp = None
+                        try:
+                            from PIL import Image
+                            fp = open(filename, "rb")
+                            img = Image.open(fp)
+                            img.load()
                             fp.close()
-                        PixivHelper.printAndLog('info', ' Image invalid, deleting...')
-                        os.remove(filename)
-                        raise
-                elif __config__.verifyImage and (filename.endswith(".ugoira") or filename.endswith(".zip")):
-                    fp = None
-                    try:
-                        import zipfile
-                        fp = open(filename, "rb")
-                        zf = zipfile.ZipFile(fp)
-                        zf.testzip()
-                        fp.close()
-                        PixivHelper.printAndLog('info', ' Image verified.')
-                    except:
-                        if fp is not None:
+                            PixivHelper.printAndLog('info', ' Image verified.')
+                        except:
+                            if fp is not None:
+                                fp.close()
+                            PixivHelper.printAndLog('info', ' Image invalid, deleting...')
+                            os.remove(filename)
+                            raise
+                    elif self.config.verifyImage and (filename.endswith(".ugoira") or filename.endswith(".zip")):
+                        fp = None
+                        try:
+                            import zipfile
+                            fp = open(filename, "rb")
+                            zf = zipfile.ZipFile(fp)
+                            zf.testzip()
                             fp.close()
-                        PixivHelper.printAndLog('info', ' Image invalid, deleting...')
-                        os.remove(filename)
-                        raise
+                            PixivHelper.printAndLog('info', ' Image verified.')
+                        except:
+                            if fp is not None:
+                                fp.close()
+                            PixivHelper.printAndLog('info', ' Image invalid, deleting...')
+                            os.remove(filename)
+                            raise
+                    else:
+                        PixivHelper.printAndLog('info', ' done.')
+
+                    # write to downloaded lists
+                    if start_iv or self.config.createDownloadLists:
+                        dfile = codecs.open(dfilename, 'a+', encoding='utf-8')
+                        dfile.write(filename + "\n")
+                        dfile.close()
+
+                    return PixivConstant.PIXIVUTIL_OK
+
+                except urllib2.HTTPError as httpError:
+                    PixivHelper.printAndLog('error', '[download_image()] HTTP Error: {0} at {1}'.format(str(httpError), url))
+                    if httpError.code == 404 or httpError.code == 502:
+                        return PixivConstant.PIXIVUTIL_NOT_OK
+                    temp_error_code = PixivException.DOWNLOAD_FAILED_NETWORK
+                    raise
+                except urllib2.URLError as urlError:
+                    PixivHelper.printAndLog('error', '[download_image()] URL Error: {0} at {1}'.format(str(urlError), url))
+                    temp_error_code = PixivException.DOWNLOAD_FAILED_NETWORK
+                    raise
+                except IOError as ioex:
+                    if ioex.errno == 28:
+                        PixivHelper.printAndLog('error', ioex.message)
+                        raw_input("Press Enter to retry.")
+                        return PixivConstant.PIXIVUTIL_NOT_OK
+                    temp_error_code = PixivException.DOWNLOAD_FAILED_IO
+                    raise
+                except KeyboardInterrupt:
+                    PixivHelper.printAndLog('info', 'Aborted by user request => Ctrl-C')
+                    return PixivConstant.PIXIVUTIL_ABORTED
+                finally:
+                    if res is not None:
+                        del res
+                    if req is not None:
+                        del req
+
+            except:
+                if temp_error_code is None:
+                    temp_error_code = PixivException.DOWNLOAD_FAILED_OTHER
+                ERROR_CODE = temp_error_code
+                exc_type, exc_value, exc_traceback = sys.exc_info()
+                traceback.print_exception(exc_type, exc_value, exc_traceback)
+                PixivHelper.printAndLog('error', 'Error at download_image(): {0} at {1} ({2})'.format(str(sys.exc_info()), url, ERROR_CODE))
+
+                if retry_count < max_retry:
+                    retry_count = retry_count + 1
+                    print "Retrying [{0}]...".format(retry_count)
+                    PixivHelper.printDelay(self.config.retryWait)
                 else:
-                    PixivHelper.printAndLog('info', ' done.')
-
-                # write to downloaded lists
-                if start_iv or __config__.createDownloadLists:
-                    dfile = codecs.open(dfilename, 'a+', encoding='utf-8')
-                    dfile.write(filename + "\n")
-                    dfile.close()
-
-                return PixivConstant.PIXIVUTIL_OK
-
-            except urllib2.HTTPError as httpError:
-                PixivHelper.printAndLog('error', '[download_image()] HTTP Error: {0} at {1}'.format(str(httpError), url))
-                if httpError.code == 404 or httpError.code == 502:
-                    return PixivConstant.PIXIVUTIL_NOT_OK
-                tempErrorCode = PixivException.DOWNLOAD_FAILED_NETWORK
-                raise
-            except urllib2.URLError as urlError:
-                PixivHelper.printAndLog('error', '[download_image()] URL Error: {0} at {1}'.format(str(urlError), url))
-                tempErrorCode = PixivException.DOWNLOAD_FAILED_NETWORK
-                raise
-            except IOError as ioex:
-                if ioex.errno == 28:
-                    PixivHelper.printAndLog('error', ioex.message)
-                    raw_input("Press Enter to retry.")
-                    return PixivConstant.PIXIVUTIL_NOT_OK
-                tempErrorCode = PixivException.DOWNLOAD_FAILED_IO
-                raise
-            except KeyboardInterrupt:
-                PixivHelper.printAndLog('info', 'Aborted by user request => Ctrl-C')
-                return PixivConstant.PIXIVUTIL_ABORTED
-            finally:
-                if res is not None:
-                    del res
-                if req is not None:
-                    del req
-
-        except:
-            if tempErrorCode is None:
-                tempErrorCode = PixivException.DOWNLOAD_FAILED_OTHER
-            ERROR_CODE = tempErrorCode
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            traceback.print_exception(exc_type, exc_value, exc_traceback)
-            PixivHelper.printAndLog('error', 'Error at download_image(): {0} at {1} ({2})'.format(str(sys.exc_info()), url, ERROR_CODE))
-
-            if retry_count < max_retry:
-                retry_count = retry_count + 1
-                print "Retrying [{0}]...".format(retry_count)
-                PixivHelper.printDelay(__config__.retryWait)
-            else:
-                raise
+                    raise
 
 
 def get_remote_file_size(url, referer=None):
@@ -344,7 +353,7 @@ def process_member(mode, member_id, user_dir='', page=1, end_page=0, bookmark=Fa
         flag = True
         updated_limit_count = 0
         image_id = -1
-
+        dl = ImageDownloadTask(__config__, __br__, __dbManager__)
         while flag:
             print 'Page ', page
             set_console_title("MemberId: " + str(member_id) + " Page: " + str(page))
@@ -394,7 +403,7 @@ def process_member(mode, member_id, user_dir='', page=1, end_page=0, bookmark=Fa
                 avatar_filename = PixivHelper.createAvatarFilename(artist, target_dir)
                 if not DEBUG_SKIP_PROCESS_IMAGE:
                     # hardcode the referer to pixiv main site
-                    download_image(artist.artistAvatar, avatar_filename, "https://www.pixiv.net/", __config__.overwrite,
+                    dl.download_image(artist.artistAvatar, avatar_filename, "https://www.pixiv.net/", __config__.overwrite,
                                    __config__.retry, __config__.backupOldFile)
                 is_avatar_downloaded = True
 
@@ -661,6 +670,7 @@ def process_image(mode, artist=None, image_id=None, user_dir='', bookmark=False,
             result = PixivConstant.PIXIVUTIL_OK
             mangaFiles = dict()
             page = 0
+            dl = ImageDownloadTask(__config__, __br__, __dbManager__)
             for img in image.imageUrls:
                 print 'Image URL :', img
                 url = os.path.basename(img)
@@ -688,7 +698,7 @@ def process_image(mode, artist=None, image_id=None, user_dir='', bookmark=False,
                         if mode == PixivConstant.PIXIVUTIL_MODE_OVERWRITE:
                             overwrite = True
 
-                        result = download_image(img, filename, referer, overwrite, __config__.retry, __config__.backupOldFile, image_id, page)
+                        result = dl.download_image(img, filename, referer, overwrite, __config__.retry, __config__.backupOldFile, image_id, page)
 
                         mangaFiles[page] = filename
                         page = page + 1
@@ -1124,6 +1134,7 @@ def process_from_group(mode, group_id, limit=0, process_external=True):
         max_id = 0
         image_count = 0
         flag = True
+        dl = ImageDownloadTask(__config__, __br__, __dbManager__)
         while flag:
             url = "https://www.pixiv.net/group/images.php?format=json&max_id={0}&id={1}".format(max_id, group_id)
             PixivHelper.printAndLog('info', "Getting images from: {0}".format(url))
@@ -1156,8 +1167,11 @@ def process_from_group(mode, group_id, limit=0, process_external=True):
                                                         tagsLimit=__config__.tagsLimit, fileUrl=image_data.imageUrls[0])
                     filename = PixivHelper.sanitizeFilename(filename, __config__.rootDirectory)
                     PixivHelper.safePrint("Filename  : " + filename)
-                    download_image(image_data.imageUrls[0], filename, url, __config__.overwrite, __config__.retry,
+
+
+                    dl.download_image(image_data.imageUrls[0], filename, url, __config__.overwrite, __config__.retry,
                                    __config__.backupOldFile)
+
                     image_count = image_count + 1
 
             if (group_data.imageList is None or len(group_data.imageList) == 0) and \
