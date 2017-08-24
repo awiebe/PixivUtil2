@@ -6,6 +6,7 @@ import sys
 reload(sys)
 sys.setdefaultencoding("utf-8")
 
+from concurrent.futures import ThreadPoolExecutor
 import os
 import re
 import traceback
@@ -73,7 +74,15 @@ class ImageDownloadTask:
         self.config=config
         self.browser = browser
         self.db = db
+        self.pool = ThreadPoolExecutor(3)
 
+    def join(self):
+        #join thread pool
+        self.pool.shutdown(True)
+
+    def async_download_image(self,completion_handler, url, filename, referrer, overwrite, max_retry, backup_old_file=False, image_id=None, page=None):
+        #submit threaded jobs
+        self.pool.submit(self.download_image,completion_handler, url, filename, referrer, overwrite, max_retry, backup_old_file=False, image_id=None, page=None)
 
     def download_image(self, url, filename, referrer, overwrite, max_retry, backup_old_file=False, image_id=None, page=None):
         global ERROR_CODE
@@ -403,7 +412,7 @@ def process_member(mode, member_id, user_dir='', page=1, end_page=0, bookmark=Fa
                 avatar_filename = PixivHelper.createAvatarFilename(artist, target_dir)
                 if not DEBUG_SKIP_PROCESS_IMAGE:
                     # hardcode the referer to pixiv main site
-                    dl.download_image(artist.artistAvatar, avatar_filename, "https://www.pixiv.net/", __config__.overwrite,
+                    dl.async_download_image(artist.artistAvatar, avatar_filename, "https://www.pixiv.net/", __config__.overwrite,
                                    __config__.retry, __config__.backupOldFile)
                 is_avatar_downloaded = True
 
@@ -698,7 +707,7 @@ def process_image(mode, artist=None, image_id=None, user_dir='', bookmark=False,
                         if mode == PixivConstant.PIXIVUTIL_MODE_OVERWRITE:
                             overwrite = True
 
-                        result = dl.download_image(img, filename, referer, overwrite, __config__.retry, __config__.backupOldFile, image_id, page)
+                        result = dl.async_download_image(img, filename, referer, overwrite, __config__.retry, __config__.backupOldFile, image_id, page)
 
                         mangaFiles[page] = filename
                         page = page + 1
@@ -712,6 +721,8 @@ def process_image(mode, artist=None, image_id=None, user_dir='', bookmark=False,
                         PixivHelper.printAndLog('error', 'Giving up url: ' + str(img))
                         __log__.exception('Error when download_image(): ' + str(img))
                     print ''
+
+            dl.join()
 
             if __config__.writeImageInfo or __config__.writeImageJSON:
                 filename_info_format = __config__.filenameInfoFormat
