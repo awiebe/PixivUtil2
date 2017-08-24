@@ -83,17 +83,7 @@ def download_image(url, filename, referer, overwrite, max_retry, backup_old_file
 
                 print 'Getting remote filesize...'
                 # open with HEAD method
-                req = PixivHelper.createCustomRequest(url, __config__, referer, head=True)
-                res = __br__.open_novisit(req)
-
-                # get file size
-                file_size = -1
-                try:
-                    file_size = int(res.info()['Content-Length'])
-                except KeyError:
-                    file_size = -1
-                    PixivHelper.printAndLog('info', "\tNo file size information!")
-                print "Remote filesize = {0} ({1} Bytes)".format(PixivHelper.sizeInStr(file_size), file_size)
+                file_size = get_remote_file_size(url, referer)
 
                 # check if existing file exists
                 if os.path.exists(filename) and os.path.isfile(filename) and not filename.endswith(".zip"):
@@ -248,6 +238,21 @@ def download_image(url, filename, referer, overwrite, max_retry, backup_old_file
                 PixivHelper.printDelay(__config__.retryWait)
             else:
                 raise
+
+
+def get_remote_file_size(url, referer=None):
+    #TODO migrate to PIXIV Helper
+    req = PixivHelper.createCustomRequest(url, __config__, referer, head=True)
+    res = __br__.open_novisit(req)
+    # get file size
+    file_size = -1
+    try:
+        file_size = int(res.info()['Content-Length'])
+    except KeyError:
+        file_size = -1
+        PixivHelper.printAndLog('info', "\tNo file size information!")
+    print "Remote filesize = {0} ({1} Bytes)".format(PixivHelper.sizeInStr(file_size), file_size)
+    return file_size
 
 
 #  Start of main processing logic
