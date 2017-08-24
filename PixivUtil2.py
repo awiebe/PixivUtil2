@@ -80,9 +80,9 @@ class ImageDownloadTask:
         #join thread pool
         self.pool.shutdown(True)
 
-    def async_download_image(self,completion_handler, url, filename, referrer, overwrite, max_retry, backup_old_file=False, image_id=None, page=None):
+    def async_download_image(self, url, filename, referrer, overwrite, max_retry, backup_old_file=False, image_id=None, page=None):
         #submit threaded jobs
-        self.pool.submit(self.download_image,completion_handler, url, filename, referrer, overwrite, max_retry, backup_old_file=False, image_id=None, page=None)
+        return self.pool.submit(self.download_image, url, filename, referrer, overwrite, max_retry, backup_old_file=False, image_id=None, page=None)
 
     def download_image(self, url, filename, referrer, overwrite, max_retry, backup_old_file=False, image_id=None, page=None):
         global ERROR_CODE
