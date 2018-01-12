@@ -84,6 +84,13 @@ class PixivConfig:
     startIrfanSlide = False
     IrfanViewPath = unicode(r'C:\Program Files\IrfanView')
 
+    #Database related
+    dbprotocol="sqlite"
+    dbhost="localhost"
+    dbname=""
+    dbuser="root"
+    dbpassword=""
+
     # Debug related
     logLevel = "DEBUG"
     enableDump = True
@@ -493,6 +500,40 @@ class PixivConfig:
                 self.downloadDelay = 2
                 print "downloadDelay = 2"
                 haveError = True
+
+            try:
+                self.dbprotocol = config.get('Database', 'dbprotocol')
+
+                try:
+                    self.dbhost = config.get('Database', 'dbhost')
+                except ValueError:
+                    self.dbhost = "localhost"
+                    print "dbhost = localhost"
+                    haveError = True
+                
+                try:
+                    self.dbname = config.get('Database', 'dbname')
+                except ValueError:
+                    if self.dbprotocol=="sqlite":
+                        self.dbname=self.dbfile
+                    else:
+                        raise ValueError("MySQL cannot be used without a database name")
+                
+                try:
+                    self.dbuser = config.get('Database', 'dbuser')
+                except ValueError:
+                    self.dbuser="root"
+                    print "dbuser = root"
+                try:
+                    self.dbpass = config.get('Database', 'dbpass')
+                except ValueError:
+                    self.dbpass=""
+                    print "dbpass no password"
+            except ValueError:
+                self.dbprotocol = "sqlite"
+            
+            
+                
 
 # except ConfigParser.NoOptionError:
 # print 'Error at loadConfig():',sys.exc_info()

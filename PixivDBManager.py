@@ -25,13 +25,24 @@ class PixivDBManager:
         else:
             PixivHelper.print_and_log('info', "using custom DB Path: " + target)
 
-        self.conn = sqlite3.connect(target,timeout)
+        
         if config is not None:
             self.__config__ = config
         else:
             self.__config__ = PixivConfig.PixivConfig()
             self.__config__.loadConfig()
-
+        
+        if self.__config__.dbprotocol=="sqlite" or self.__config__.dbprotocol is None:
+            self.conn = sqlite3.connect(target,timeout)
+        elif self.__config__.dbprotocol=="mysql":
+            #lazy load mysql dependancies
+            import mysql.connector
+            host = self.__config__.dbhost
+            dbname=self.__config__.dbname
+            user=self.__config__.dbuser
+            password=self.__config__.dbpass
+            self.conn=mysql.connector.connect(host=host, user=user, database=dbname,
+                                           password=password)
     def close(self):
         self.conn.close()
 
