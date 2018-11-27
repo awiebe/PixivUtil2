@@ -30,6 +30,7 @@ _browser = None
 
 # pylint: disable=E1101
 class PixivBrowser(mechanize.Browser):
+    """A browser for when just plain http is not enough (session data is needed)."""
     _config = None
     _isWhitecube = False
     _whitecubeToken = ""
@@ -62,6 +63,7 @@ class PixivBrowser(mechanize.Browser):
         self._configureCookie(cookie_jar)
 
     def _configureBrowser(self, config):
+        """Configure the browser automatically using the config.ini"""
         if config is None:
             PixivHelper.GetLogger().info("No config given")
             return
@@ -106,6 +108,7 @@ class PixivBrowser(mechanize.Browser):
         socket.setdefaulttimeout(config.timeout)
 
     def _configureCookie(self, cookie_jar):
+        """Set the object which will store browser cookies"""
         if cookie_jar is not None:
             self.set_cookiejar(cookie_jar)
 
@@ -114,6 +117,10 @@ class PixivBrowser(mechanize.Browser):
                 defaultCookieJar = cookie_jar
 
     def addCookie(self, cookie):
+        """Add cookie to storage using a cookie string.
+        cookie
+            A `cookielib.Cookie`
+        """
         global defaultCookieJar
         if defaultCookieJar is None:
             defaultCookieJar = cookielib.LWPCookieJar()
@@ -122,6 +129,12 @@ class PixivBrowser(mechanize.Browser):
     def open_with_retry(self, url, data=None,
                         timeout=mechanize._sockettimeout._GLOBAL_DEFAULT_TIMEOUT,
                         retry=0):
+        """Return the body of the resource at the specified URL, or raise an exception on timeout or retry limit.
+
+        :raise: PixivException: SERVER_ERROR on max retries exceeded.
+        :return: mechanize.Response
+        :rtype: mechanize.Response
+        """
         retry_count = 0
         if retry == 0 and self._config is not None:
             retry = self._config.retry
@@ -143,10 +156,10 @@ class PixivBrowser(mechanize.Browser):
                     raise PixivException("Failed to get page: " + ex.message, errorCode=PixivException.SERVER_ERROR)
 
     def getPixivPage(self, url, referer="https://www.pixiv.net", returnParsed=True):
-        ''' get page from pixiv and return as parsed BeautifulSoup object or response object.
+        """ get page from pixiv and return as parsed BeautifulSoup object or response object.
 
             throw PixivException as server error
-        '''
+        """
         url = self.fixUrl(url)
         retry_count = 0
         while True:
@@ -174,6 +187,7 @@ class PixivBrowser(mechanize.Browser):
                     raise PixivException("Failed to get page: " + ex.message, errorCode=PixivException.SERVER_ERROR)
 
     def fixUrl(self, url, useHttps=True):
+        """Prepend the pixiv domain and scheme to a path that does not already have one."""
         # url = str(url)
         if not url.startswith("http"):
             if not url.startswith("/"):
@@ -184,9 +198,13 @@ class PixivBrowser(mechanize.Browser):
                 return "http://www.pixiv.net" + url
         return url
 
-    def _loadCookie(self, cookie_value):
-        """ Load cookie to the Browser instance """
-        ck = cookielib.Cookie(version=0, name='PHPSESSID', value=cookie_value, port=None,
+    def _loadCookie(self, cookie_value,key='PHPSESSID'):
+        """ Load cookie to the Browser instance.  For legacy reasons this is the PHPSESSID if unspecified.
+
+            :cookie_value: The value which should be set
+            :key: The key of the cookie to set.
+        """
+        ck = cookielib.Cookie(version=0, name=key, value=cookie_value, port=None,
                              port_specified=False, domain='pixiv.net', domain_specified=False,
                              domain_initial_dot=False, path='/', path_specified=True,
                              secure=False, expires=None, discard=True, comment=None,
@@ -194,6 +212,7 @@ class PixivBrowser(mechanize.Browser):
         self.addCookie(ck)
 
     def _getInitConfig(self, page):
+        """Grab important login form data such as captcha."""
         init_config = page.find('input', attrs={'id': 'init-config'})
         js_init_config = json.loads(init_config['value'])
         return js_init_config
@@ -224,6 +243,7 @@ class PixivBrowser(mechanize.Browser):
         return False
 
     def login(self, username, password):
+        """Login to pixiv using a username and password pair."""
         try:
             PixivHelper.print_and_log('info', 'Logging in...')
             url = "https://accounts.pixiv.net/login"
@@ -253,6 +273,7 @@ class PixivBrowser(mechanize.Browser):
             raise
 
     def processLoginResult(self, response):
+        """Store the session cookies which result from a successful login."""
         PixivHelper.GetLogger().info('Logging in, return url: %s', response.geturl())
 
         # check the returned json
@@ -284,6 +305,7 @@ class PixivBrowser(mechanize.Browser):
             return False
 
     def getMyId(self, parsed):
+        """Return the id of the logged in user."""
         ''' Assume from main page '''
         # pixiv.user.id = "189816";
         temp = re.findall(r"pixiv.user.id = \"(\d+)\";", unicode(parsed))
@@ -294,6 +316,7 @@ class PixivBrowser(mechanize.Browser):
             PixivHelper.print_and_log('info', 'Unable to get User Id')
 
     def detectWhiteCube(self, page, url):
+        """Detect whitecube layout and modify browser behaviour to accommodate it."""
         if page.find("capybara-status-check") == -1:
             print("*******************************************")
             print("* Pixiv AJAX UI mode.                     *")
@@ -303,12 +326,16 @@ class PixivBrowser(mechanize.Browser):
             self._isWhitecube = True
 
     def parseLoginError(self, res):
+        """Scrape the error message out of the login failure page"""
         page = BeautifulSoup(res.read())
         r = page.findAll('span', attrs={'class': 'error'})
         return r
 
     def getImagePage(self, image_id, parent=None, from_bookmark=False,
                      bookmark_count=-1, image_response_count=-1):
+        """Produce an abstract `PixivImage` container from an image given its ID.
+        :returns (img,responseSoup): A tupple containing a PixivImage and the "soup" of the page.
+        """
         image = None
         response = None
         PixivHelper.GetLogger().debug("Getting image page: %s", image_id)
@@ -476,6 +503,15 @@ class PixivBrowser(mechanize.Browser):
 ##        return (url, response)
 
     def getMemberPage(self, member_id, page=1, bookmark=False, tags=None):
+        """Produce a PixivArtist for the provided member, paginated by page.
+
+        TODO:This might be better as a generator, should arguments be converted to string if they are provided as int?
+        :type member_id: str
+        :arg  member_id And id string which identifies the artist.
+        :arg
+        :rtype: (PixivArtist, BeautifulSoup)
+
+        """
         artist = None
         response = None
         if tags is not None:
@@ -546,6 +582,21 @@ class PixivBrowser(mechanize.Browser):
                          member_id=None,
                          oldest_first=False,
                          start_page=1):
+        """
+        Return the PixivTag and soup for the given tags, paginated by current_page.
+        :param tags:
+        :type  tags list[str]
+        :param current_page: The page of the search
+        :param wild_card:
+        :param title_caption:
+        :param start_date:
+        :param end_date:
+        :param member_id:
+        :param oldest_first:
+        :param start_page:
+        :return:
+        :rtype: (PixivTags,BeautifulSoup)
+        """
         response = None
         result = None
         url = ''
@@ -671,6 +722,7 @@ class PixivBrowser(mechanize.Browser):
 
 
 def getBrowser(config=None, cookieJar=None):
+    """Convenience method for producing a browser,using global defaults if config not specified."""
     global defaultCookieJar
     global defaultConfig
     global _browser
@@ -697,6 +749,7 @@ def getExistingBrowser():
 
 # pylint: disable=W0612
 def test():
+    """TODO:This should be in a unit test file."""
     from PixivConfig import PixivConfig
     cfg = PixivConfig()
     cfg.loadConfig("./config.ini")
