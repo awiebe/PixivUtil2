@@ -16,7 +16,14 @@ script_path = PixivHelper.module_path()
 
 
 class PixivDBManager:
-    """Pixiv Database Manager"""
+    """PixivUtil Database Manager.  Database CRUD methods and utility functions for cleanup.
+
+    TODO: Should this be replaced with an ORM?
+    TODO: Other DB Support? Provided automatically with ORM use.
+    TODO: Cleanup procedures don't consider manga_image.
+    TODO: Support for tags.
+    TODO: Normalize pixiv_manga_image(save_name) ->SELECT save_path FROM pixiv_master_image INNER JOIN pixiv_manga_image,pixiv_master_image ON pixiv_master_image.image_id=pixiv_manga_image.image_id
+    """
     __config__ = None
 
     def __init__(self, target='', config=None, timeout=5 * 60):
@@ -612,6 +619,7 @@ class PixivDBManager:
         return False
 
     def cleanupFileExists(self, filename):
+        """Permute stored file extensions against possible extensions to see if a file exists."""
         anim_ext = ['.zip', '.gif', '.apng', '.ugoira', '.webm']
         fileExists = False
         if filename is not None or len(filename) > 0:
@@ -627,6 +635,7 @@ class PixivDBManager:
         return fileExists
 
     def cleanUp(self):
+        """Removes any file which is in the database, but does not exist in any pixiv format."""
         anim_ext = ['.zip', '.gif', '.apng', '.ugoira', '.webm']
         try:
             print("Start clean-up operation.")
@@ -663,6 +672,8 @@ class PixivDBManager:
             c.close()
 
     def interactiveCleanUp(self):
+        """An interactive cleanup, attempts to correct missing paths by replacing faulty parts,
+        instead of simply deleting entries."""
         l = []
         try:
             print("Start clean-up operation.")
@@ -711,6 +722,7 @@ class PixivDBManager:
         # TODO check for files which exist but don't have a DB entry
 
     def replaceRootPath(self):
+        """Modify dirname of files in the database, useful when the top level storage path has moved."""
         oldPath = raw_input("Old Path to Replace = ")
         PixivHelper.safePrint("Replacing " + oldPath + " to " + self.__config__.rootDirectory)
         cont = raw_input("continue[y/n]?") or 'n'
