@@ -14,7 +14,7 @@ script_path = PixivHelper.module_path()
 
 
 class PixivConfig:
-    '''Configuration class'''
+    """Configuration class, represents the setting stored in config.ini"""
     __logger = PixivHelper.GetLogger()
     configFileLocation = "config.ini"
 
@@ -104,7 +104,7 @@ class PixivConfig:
     debugHttp = False
 
     def loadConfig(self, path=None):
-        ''' new settings must be added on the last'''
+        """ new settings must be added on the last"""
 
         if path is not None:
             self.configFileLocation = path
@@ -567,7 +567,7 @@ class PixivConfig:
 
     # -UI01B------write config
     def writeConfig(self, error=False, path=None):
-        '''Backup old config if exist and write updated config.ini'''
+        """Backup old config if exist and write updated config.ini"""
         print('Writing config file...', end=' ')
         config = ConfigParser.RawConfigParser()
 
