@@ -58,6 +58,8 @@ class PixivConfig(object):
     tagsLimit = -1
     writeImageInfo = False
     writeImageJSON = False
+    updateInfoFiles= False
+    skipUpdatingExistingInfoFiles=True
     dateDiff = 0
     backupOldFile = False
     enableInfiniteLoop = False
@@ -348,6 +350,20 @@ class PixivConfig(object):
             except ValueError:
                 self.writeImageInfo = False
                 print("writeImageInfo = False")
+                haveError = True
+            
+            try:
+                self.updateInfoFiles = config.getboolean('Settings', 'updateInfoFiles')
+            except ValueError:
+                self.updateInfoFiles = False
+                print("updateInfoFiles = False")
+                haveError = True
+            
+            try:
+                self.skipUpdatingExistingInfoFiles = config.getboolean('Settings', 'skipUpdatingExistingInfoFiles')
+            except ValueError:
+                self.skipUpdatingExistingInfoFiles = True
+                print("skipUpdatingExistingInfoFiles = True")
                 haveError = True
 
             try:
@@ -666,6 +682,8 @@ class PixivConfig(object):
         config.set('Settings', 'useBlacklistMembers', self.useBlacklistMembers)
         config.set('Settings', 'setLastModified', self.setLastModified)
         config.set('Settings', 'useLocalTimezone', self.useLocalTimezone)
+        config.set('Settings', 'skipUpdatingExistingInfoFiles', self.skipUpdatingExistingInfoFiles)
+        config.set('Settings', 'updateInfoFiles', self.updateInfoFiles)
 
         config.add_section('Filename')
         config.set('Filename', 'filenameFormat', self.filenameFormat)

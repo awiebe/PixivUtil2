@@ -666,7 +666,9 @@ class PixivImage:
         except BaseException:
             PixivHelper.GetLogger().exception("Cannot parse bookmark count for: " + str(self.imageId))
 
-    def WriteInfo(self, filename):
+    def WriteInfo(self, filename,overwrite =False):
+        if not overwrite and os.path.exists(filename):
+            return
         info = None
         try:
             # Issue #421 ensure subdir exists.
@@ -699,8 +701,10 @@ class PixivImage:
                 info.write(" - " + link + "\r\n")
         info.close()
 
-    def WriteJSON(self, filename):
+    def WriteJSON(self, filename,overwrite =False):
         info = None
+        if not overwrite and os.path.exists(filename):
+            return
         try:
             # Issue #421 ensure subdir exists.
             PixivHelper.makeSubdirs(filename)
